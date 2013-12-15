@@ -37,27 +37,33 @@ static unsigned int	NWarriors = 0;
 static warrior_t	Warriors[MAX_WARRIORS];
 
 static char *		WarriorNames[MAX_WARRIORS];
-				/* File names of warriors. */
-
-static field_t		Positions[MAX_WARRIORS];
-static field_t		StartPositions[MAX_WARRIORS];
-				/* Starting position of each warrior. */
+/* File names of warriors. */
 
 
-static unsigned int	Deaths[MAX_WARRIORS];	
+typedef struct threadctx {
+     field_t		Positions[MAX_WARRIORS];
+     field_t		StartPositions[MAX_WARRIORS];
+                    /* Starting position of each warrior. */
 
-static u32_t		Results[MAX_WARRIORS][MAX_WARRIORS+1];
-				/* Results[war_id][j] is the number of
-				   rounds in which warrior war_id
-				   survives until the end with exactly
-				   j-1 other warriors.  For j=0, then
-				   it is the number of rounds where
-				   the warrior died. */
 
-static pspace_t *	PSpaces[MAX_WARRIORS];
-				/* p-spaces of warriors. */
+     unsigned int	Deaths[MAX_WARRIORS];
 
-static core_t Core;
+     u32_t		Results[MAX_WARRIORS][MAX_WARRIORS+1];
+                    /* Results[war_id][j] is the number of
+                       rounds in which warrior war_id
+                       survives until the end with exactly
+                       j-1 other warriors.  For j=0, then
+                       it is the number of rounds where
+                       the warrior died. */
+
+     pspace_t *	PSpaces[MAX_WARRIORS];
+                    /* p-spaces of warriors. */
+
+     core_t Core;
+
+} threadctx_t;
+
+static threadctx_t ThreadContext;
 
 /* Globals to communicate options from readargs() to main() */
 int	OPT_cycles = 80000;	/* cycles until tie */
@@ -179,7 +185,7 @@ check_sanity()
 				    * position */
 #define RETRIES2 4                /* how many times to start backtracking */
 int
-posit(s32_t *seed)
+posit(threadctx_t *threadctx, s32_t *seed)
 {
     unsigned int pos = 1, i;
     unsigned int retries1 = RETRIES1, retries2 = RETRIES2;
@@ -188,13 +194,13 @@ posit(s32_t *seed)
     do {
 	/* generate */
 	*seed = rng(*seed);
-	Positions[pos] =
+	threadctx->Positions[pos] =
 	    (*seed % (OPT_coresize - 2*OPT_minsep+1))+OPT_minsep;
 
 	/* test for overlap */
 	for (i = 1; i < pos; ++i) {
 	    /* calculate positive difference */
-	    diff = (int) Positions[pos] - Positions[i];
+	    diff = (int) threadctx->Positions[pos] - threadctx->Positions[i];
 	    if (diff < 0)
 		diff = -diff;
 	    if ((unsigned int)diff < OPT_minsep)
@@ -219,7 +225,7 @@ posit(s32_t *seed)
 }
 
 void
-npos(s32_t *seed)
+npos(threadctx_t *threadctx, s32_t *seed)
 {
     unsigned int i, j;
     unsigned int temp;
@@ -230,17 +236,17 @@ npos(s32_t *seed)
 	*seed = rng(*seed);
 	temp = *seed % room;
 	for (j = i - 1; j > 0; j--) {
-	    if (temp > Positions[j])
+	    if (temp > threadctx->Positions[j])
 		break;
-	    Positions[j+1] = Positions[j];
+	    threadctx->Positions[j+1] = threadctx->Positions[j];
 	}
-	Positions[j+1] = temp;
+	threadctx->Positions[j+1] = temp;
     }
 
     /* Separate the positions by OPT_minsep cells. */
     temp = OPT_minsep;
     for (i = 1; i < NWarriors; i++) {
-	Positions[i] += temp;
+	threadctx->Positions[i] += temp;
 	temp += OPT_minsep;
     }
 
@@ -248,32 +254,32 @@ npos(s32_t *seed)
     for (i = 1; i < NWarriors; i++) {
 	*seed = rng(*seed);
 	j = *seed % (NWarriors - i) + i;
-	temp = Positions[j];
-	Positions[j] = Positions[i];
-	Positions[i] = temp;
+	temp = threadctx->Positions[j];
+	threadctx->Positions[j] = threadctx->Positions[i];
+	threadctx->Positions[i] = temp;
     }
 }
 
 s32_t
-compute_positions(s32_t seed)
+compute_positions(threadctx_t *threadctx, s32_t seed)
 {
     u32_t avail = OPT_coresize+1 - NWarriors*OPT_minsep;
 
-    Positions[0] = 0;
+    threadctx->Positions[0] = 0;
 
     /* Case single warrior. */
     if (NWarriors == 1) return seed;
 
     /* Case one on one. */
     if (NWarriors == 2) {
-	Positions[1] = OPT_minsep + seed % avail;
+	threadctx->Positions[1] = OPT_minsep + seed % avail;
 	seed = rng(seed);
 	return seed;
     }
 
     if (NWarriors>2) {
-	if (posit(&seed)) {
-	    npos(&seed);
+	if (posit(threadctx, &seed)) {
+	    npos(threadctx, &seed);
 	}
     }
     return seed;
@@ -285,15 +291,15 @@ compute_positions(s32_t seed)
  */
 
 void
-save_pspaces()
+save_pspaces(threadctx_t *threadctx)
 {
     pspace_t **ps;
-    ps = sim_get_pspaces(&Core);
-    memcpy( PSpaces, ps, sizeof(pspace_t *)*NWarriors );
+    ps = sim_get_pspaces(&(threadctx->Core));
+    memcpy( threadctx->PSpaces, ps, sizeof(pspace_t *)*NWarriors );
 }
 
 void
-amalgamate_pspaces()
+amalgamate_pspaces(threadctx_t *threadctx)
 {
     unsigned int i, j;
 
@@ -304,7 +310,7 @@ amalgamate_pspaces()
 		if ( Warriors[j].have_pin &&
 		     Warriors[j].pin == Warriors[i].pin )
 		{
-		    pspace_share( PSpaces[i], PSpaces[j] );
+		    pspace_share( threadctx->PSpaces[i], threadctx->PSpaces[j] );
 		}
 	    }
 	}
@@ -312,16 +318,16 @@ amalgamate_pspaces()
 }
 
 void
-load_warriors()
+load_warriors(threadctx_t *threadctx)
 {
     unsigned int i;
     for (i=0; i<NWarriors; i++) {
-	sim_load_warrior(&Core, Positions[i], &Warriors[i].code[0], Warriors[i].len);
+	sim_load_warrior(&(threadctx->Core), threadctx->Positions[i], &Warriors[i].code[0], Warriors[i].len);
     }
 }
 
 void
-set_starting_order(unsigned int round)
+set_starting_order(threadctx_t *threadctx, unsigned int round)
 {
     unsigned int i;
     pspace_t **ps;
@@ -330,31 +336,31 @@ set_starting_order(unsigned int round)
        with a cyclic shift of rounds places. */
     for (i=0; i<NWarriors; i++) {
 	unsigned int j = (i+round) % NWarriors;
-	StartPositions[i] =
-	    ( Positions[j] + Warriors[j].start ) % OPT_coresize;
+	threadctx->StartPositions[i] =
+	    ( threadctx->Positions[j] + Warriors[j].start ) % OPT_coresize;
     }
 
     /* Copy p-spaces into simulator p-space array with a
        cyclic shift of rounds places. */
-    ps = sim_get_pspaces(&Core);
+    ps = sim_get_pspaces(&(threadctx->Core));
     for (i=0; i<NWarriors; i++) {
-	ps[i] = PSpaces[(i + round) % NWarriors];
+	ps[i] = threadctx->PSpaces[(i + round) % NWarriors];
     }
 }
 
 void
-clear_results()
+clear_results(threadctx_t *threadctx)
 {
     unsigned int i, j;
     for (i=0; i<NWarriors; i++) {
 	for (j=0; j<=NWarriors; j++) {
-	    Results[i][j] = 0;
+	    threadctx->Results[i][j] = 0;
 	}
     }
 }
 
 void
-accumulate_results()
+accumulate_results(threadctx_t *threadctx)
 {
     unsigned int i;
 
@@ -362,27 +368,27 @@ accumulate_results()
        that has been updated by the simulator. */
     for (i=0; i<NWarriors; i++) {
 	unsigned int result;
-	result = pspace_get(PSpaces[i], 0);
-	Results[i][result]++;
+	result = pspace_get(threadctx->PSpaces[i], 0);
+	threadctx->Results[i][result]++;
     }
 }
 
 
 void
-output_results()
+output_results(threadctx_t *threadctx)
 {
     unsigned int i;
     unsigned int j;
 
     if (NWarriors == 2 && !OPT_m) {
-	printf("%ld %ld\n", Results[0][1], Results[0][2]);
-	printf("%ld %ld\n", Results[1][1], Results[1][2]);
+	printf("%ld %ld\n", threadctx->Results[0][1], threadctx->Results[0][2]);
+	printf("%ld %ld\n", threadctx->Results[1][1], threadctx->Results[1][2]);
     } else {
 	for (i=0; i<NWarriors; i++) {
 	    for (j=1; j<=NWarriors; j++) {
-		printf("%ld ", Results[i][j]);
+		printf("%ld ", threadctx->Results[i][j]);
 	    }
-	    printf("%ld\n", Results[i][0]);
+	    printf("%ld\n", threadctx->Results[i][0]);
 	}
     }
 }
@@ -501,43 +507,46 @@ main( int argc, char **argv )
 
     prog_name = xbasename(argv[0]);
     readargs(argc, argv);
+    
+    
+    memset(&ThreadContext, 0, sizeof(threadctx_t));
 
     import_warriors();
     check_sanity();
-    clear_results();
+    clear_results(&ThreadContext);
 
     seed = OPT_F ? OPT_F-OPT_minsep : rng(time(0)*0x1d872b41);
 
     /*
      * Allocate simulator buffers and initialise p-spaces.
      */
-    if ( sim_create( &Core, NWarriors, OPT_coresize, OPT_processes, OPT_cycles) != 0 )
+    if ( sim_create( &(ThreadContext.Core), NWarriors, OPT_coresize, OPT_processes, OPT_cycles) != 0 )
         panic("can't allocate memory.\n");
 
-    save_pspaces();
-    amalgamate_pspaces();	/* Share P-spaces with equal PINs */
+    save_pspaces(&ThreadContext);
+    amalgamate_pspaces(&ThreadContext);	/* Share P-spaces with equal PINs */
 
     /*
      * Fight OPT_rounds rounds.
      */
     for ( n = 0; n < OPT_rounds; n++ ) {
 	int nalive;
-	sim_clear_core(&Core);
+	sim_clear_core(&(ThreadContext.Core));
 
-	seed = compute_positions(seed);
-	load_warriors();
-	set_starting_order(n);
+	seed = compute_positions(&ThreadContext, seed);
+	load_warriors(&ThreadContext);
+	set_starting_order(&ThreadContext, n);
 
-	nalive = sim_mw( &Core, &StartPositions[0], &Deaths[0] );
+	nalive = sim_mw( &ThreadContext.Core, &ThreadContext.StartPositions[0], &ThreadContext.Deaths[0] );
 	if (nalive<0)
 	    panic("simulator panic!\n");	
 
-	accumulate_results();
+	accumulate_results(&ThreadContext);
     }
-    sim_free_bufs(&Core);
+    sim_free_bufs(&ThreadContext.Core);
     /*print_counts();*/
     
 
-    output_results();
+    output_results(&ThreadContext);
     return 0;
 }
