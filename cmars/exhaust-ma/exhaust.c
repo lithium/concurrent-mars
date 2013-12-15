@@ -70,8 +70,8 @@ typedef struct threadctx {
 } threadctx_t;
 
 static threadctx_t *Contexts;
-static pthread_mutex_t ContextMutex;
-static pthread_cond_t ContextCondition;
+
+u32_t		OverallResults[MAX_WARRIORS][MAX_WARRIORS+1];
 
 /* Globals to communicate options from readargs() to main() */
 int	OPT_cycles = 80000;	/* cycles until tie */
@@ -384,20 +384,20 @@ accumulate_results(threadctx_t *threadctx)
 
 
 void
-output_results(threadctx_t *threadctx)
+output_results(u32_t (*results)[MAX_WARRIORS+1])
 {
     unsigned int i;
     unsigned int j;
 
     if (NWarriors == 2 && !OPT_m) {
-	printf("%ld %ld\n", threadctx->Results[0][1], threadctx->Results[0][2]);
-	printf("%ld %ld\n", threadctx->Results[1][1], threadctx->Results[1][2]);
+	printf("%ld %ld\n", results[0][1], results[0][2]);
+	printf("%ld %ld\n", results[1][1], results[1][2]);
     } else {
 	for (i=0; i<NWarriors; i++) {
 	    for (j=1; j<=NWarriors; j++) {
-		printf("%ld ", threadctx->Results[i][j]);
+		printf("%ld ", results[i][j]);
 	    }
-	    printf("%ld\n", threadctx->Results[i][0]);
+	    printf("%ld\n", results[i][0]);
 	}
     }
 }
@@ -551,7 +551,7 @@ void *thread_main(void *arg)
         
         accumulate_results(threadctx);
     }
-    output_results(threadctx);
+//    output_results(threadctx->Results);
 
     return NULL;
 }
@@ -572,7 +572,7 @@ main( int argc, char **argv )
     
     Contexts = malloc(OPT_threads * sizeof(threadctx_t));
     memset(Contexts, 0, OPT_threads*sizeof(threadctx_t));
-    
+    memset(OverallResults, 0, sizeof(u32_t)*MAX_WARRIORS*(MAX_WARRIORS+1));
 
     int roundsPerThread = OPT_rounds/OPT_threads;
     int j;
@@ -586,18 +586,20 @@ main( int argc, char **argv )
             exit(retval);
         }
     }
+    
+    // block until all threads are done
     for (j=0; j < OPT_threads; j++) {
         threadctx_t *threadctx = &Contexts[j];
         pthread_join(threadctx->pthread, NULL);
+
+        for (int x=0; x<NWarriors; x++) {
+            for (int y=0; y<=NWarriors; y++) {
+                OverallResults[x][y] += threadctx->Results[x][y];
+            }
+        }
+        sim_free_bufs(&(threadctx->Core));
     }
 
-    printf("finished waiting\n");
-
-
-
-//    sim_free_bufs(&ThreadContext.Core);
-    /*print_counts();*/
-    
-//    output_results(&ThreadContext);
+    output_results(OverallResults);
     return 0;
 }
