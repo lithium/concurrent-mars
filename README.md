@@ -1,6 +1,6 @@
 
 Thread-safe version of the [exhaust-ma](http://corewar.co.uk/ankerl/exhaust-ma.htm) embeddable core war simulator.
-Supports running rounds concurrently. Each thread runs its own core simulator, running ```NumRounds/NumThreads``` each.
+Supports running rounds concurrently. Each thread runs its own core simulator, running ```rounds/threadcount``` each.
 
 Usage
 ```
