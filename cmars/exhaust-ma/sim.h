@@ -60,10 +60,10 @@ int sim_load_warrior(core_t *core, unsigned int pos, insn_t const *code, unsigne
 
 
 
-int sim( core_t *core, int nwar_arg, field_t w1_start, field_t w2_start,
-	 unsigned int cycles, void **ptr_result );
+//int sim( core_t *core, int nwar_arg, field_t w1_start, field_t w2_start,
+//	 unsigned int cycles, void **ptr_result );
 
-int sim_mw( core_t *core, unsigned int nwar, const field_t *war_pos_tab,
+int sim_mw( core_t *core, const field_t *war_pos_tab,
 	    unsigned int *death_tab );
 
 #endif /* SIM_H */

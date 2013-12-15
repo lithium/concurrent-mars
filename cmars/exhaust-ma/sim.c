@@ -50,8 +50,8 @@
 
 
 /* protos */
-static int sim_proper( unsigned int, const field_t *, unsigned int * );
-static void alloc_pspaces( unsigned int nwars, unsigned int pspacesize );
+static int sim_proper( core_t *core, const field_t *, unsigned int * );
+static void alloc_pspaces( core_t *core, unsigned int pspacesize );
 static void free_pspaces( core_t *core );
 
 /*---------------------------------------------------------------
@@ -127,7 +127,11 @@ sim_create(core_t *core, unsigned int nwars, unsigned int coresize, unsigned int
     unsigned int pspace;
     pspace = coresize/16 == 0 ? 1 : coresize/16;
 
-  unsigned int queue_size;
+    unsigned int queue_size;
+    core->Cycles = cycles;
+    core->NWarriors = nwars;
+    core->Coresize = coresize;
+    core->Processes = processes;
 
   memset(core, 0, sizeof(core_t));
   sim_free_bufs(core);
@@ -136,12 +140,8 @@ sim_create(core_t *core, unsigned int nwars, unsigned int coresize, unsigned int
   queue_size = nwars*processes+1;
   core->Queue_Mem = (insn_t**)malloc( sizeof(insn_t*)*queue_size );
   core->War_Tab = (w_t*)malloc( sizeof(w_t)*nwars );
-  alloc_pspaces(nwars, pspace);
+  alloc_pspaces(core, pspace);
 
-  core->Cycles = cycles;
-  core->NWarriors = nwars;
-  core->Coresize = coresize;
-  core->Processes = processes;
   sim_clear_pspaces(core);
   return 0;
 }
@@ -176,17 +176,17 @@ sim_create(core_t *core, unsigned int nwars, unsigned int coresize, unsigned int
  *    -2 -- warrior length > core size.
  */
 int
-sim_load_warrior(unsigned int pos, const insn_t * const code, unsigned int len)
+sim_load_warrior(core_t *core, unsigned int pos, const insn_t * const code, unsigned int len)
 {
   unsigned int i;
   field_t k;
   u32_t in;
 
-  if ( Core_Mem == NULL )  return -1;
-  if ( len > Coresize ) return -2;
+  if ( core->Core_Mem == NULL )  return -1;
+  if ( len > core->Coresize ) return -2;
 
   for (i=0; i<len; i++) {
-    k = (pos+i) % Coresize;
+    k = (pos+i) % core->Coresize;
 
 #if SIM_STRIP_FLAGS
     in = code[i].in & iMASK;
@@ -194,9 +194,9 @@ sim_load_warrior(unsigned int pos, const insn_t * const code, unsigned int len)
     in = code[i].in;
 #endif
 
-    Core_Mem[k].in = in;
-    Core_Mem[k].a = code[i].a;
-    Core_Mem[k].b = code[i].b;
+    core->Core_Mem[k].in = in;
+    core->Core_Mem[k].a = code[i].a;
+    core->Core_Mem[k].b = code[i].b;
   }
   return 0;
 }
@@ -213,11 +213,11 @@ free_pspaces(core_t *core)
 {
   unsigned int i;
   if ( core->NWarriors>0 ) {
-    if (PSpaces) {
+    if (core->PSpaces) {
       for (i=0; i<core->NWarriors; i++) {
-	pspace_free(PSpaces[i]);
+        pspace_free(core->PSpaces[i]);
       }
-      free(PSpaces);
+      free(core->PSpaces);
     }
   }
   core->PSpace_size = 0;
@@ -226,28 +226,28 @@ free_pspaces(core_t *core)
 
 
 static void
-alloc_pspaces(unsigned int nwars, unsigned int pspacesize)
+alloc_pspaces(core_t *core, unsigned int pspacesize)
 {
   unsigned int i;
   int success = 0;
 
-  PSpaces = NULL;
-  PSpace_size = 0;
-  if (nwars==0) { return; }
+  core->PSpaces = NULL;
+  core->PSpace_size = 0;
+  if (core->NWarriors==0) { return; }
   
-  if (( PSpaces = (pspace_t**)malloc(sizeof(pspace_t*)*nwars))) {
+  if (( core->PSpaces = (pspace_t**)malloc(sizeof(pspace_t*)*core->NWarriors))) {
     success = 1;
-    for (i=0; i<nwars; i++) { PSpaces[i] = NULL; }
-    for (i=0; success && i<nwars; i++) {
-	PSpaces[i] = pspace_alloc(pspacesize);
-	success = success && PSpaces[i] != NULL;
+    for (i=0; i<core->NWarriors; i++) { core->PSpaces[i] = NULL; }
+    for (i=0; success && i<core->NWarriors; i++) {
+        core->PSpaces[i] = pspace_alloc(pspacesize);
+        success = success && core->PSpaces[i] != NULL;
     }
   }
 
   if ( !success ) {
-    free_pspaces(nwars);
+    free_pspaces(core);
   } else {
-    PSpace_size = pspacesize;
+    core->PSpace_size = pspacesize;
   }
 }
 
@@ -266,15 +266,15 @@ alloc_pspaces(unsigned int nwars, unsigned int pspacesize)
  *     when fighting.
  */
 pspace_t **
-sim_get_pspaces()
+sim_get_pspaces(core_t *core)
 {
-    return PSpaces;
+    return core->PSpaces;
 }
 
 pspace_t *
-sim_get_pspace(unsigned int war_id)
+sim_get_pspace(core_t *core, unsigned int war_id)
 {
-    return PSpaces[war_id];
+    return core->PSpaces[war_id];
 }
 
 /* NAME
@@ -292,23 +292,23 @@ sim_get_pspace(unsigned int war_id)
  * */
 
 void
-sim_clear_pspaces()
+sim_clear_pspaces(core_t *core)
 {
   unsigned int i;
-  for (i=0; i<NWarriors; i++) {
-    pspace_clear(PSpaces[i]);
-    pspace_set(PSpaces[i], 0, Coresize-1);
+  for (i=0; i<core->NWarriors; i++) {
+    pspace_clear(core->PSpaces[i]);
+    pspace_set(core->PSpaces[i], 0, core->Coresize-1);
   }
 }
 
 void
-sim_reset_pspaces()
+sim_reset_pspaces(core_t *core)
 {
   unsigned int i;
-  for (i=0; i<NWarriors; i++) {
-    pspace_privatise(PSpaces[i]);
+  for (i=0; i<core->NWarriors; i++) {
+    pspace_privatise(core->PSpaces[i]);
   }
-  sim_clear_pspaces();
+  sim_clear_pspaces(core);
 }
 
 
@@ -369,67 +369,67 @@ sim_reset_pspaces()
  *     All file scoped globals */
 
 int
-sim_mw(unsigned int nwar, const field_t *const war_pos_tab, unsigned int *death_tab)
+sim_mw(core_t *core, const field_t *const war_pos_tab, unsigned int *death_tab)
 {
   int alive_count;
-  if ( !Core_Mem || !Queue_Mem || !War_Tab || !PSpaces ) return -1;
+  if ( !core->Core_Mem || !core->Queue_Mem || !core->War_Tab || !core->PSpaces ) return -1;
 
-  alive_count = sim_proper( nwar, war_pos_tab, death_tab );
+  alive_count = sim_proper( core, war_pos_tab, death_tab );
 
   /* Update p-space locations 0. */
   if (alive_count >= 0) {
     unsigned int nalive = alive_count;
     unsigned int i;
 
-    for (i=0; i<nwar; i++) {
-      pspace_set( PSpaces[i], 0, nalive);
+    for (i=0; i<core->NWarriors; i++) {
+      pspace_set( core->PSpaces[i], 0, nalive);
     }
-    for (i=0; i<nwar-nalive; i++) {
-      pspace_set( PSpaces[death_tab[i]], 0, 0);
+    for (i=0; i<core->NWarriors-nalive; i++) {
+      pspace_set( core->PSpaces[death_tab[i]], 0, 0);
     }
   }
   return alive_count;
 }
 
-
-int
-sim( int nwar,
-     field_t w1_start,
-     field_t w2_start,
-     unsigned int cycles,
-     void **ptr_result )
-{
-  field_t war_pos_tab[2];
-  unsigned int death_tab[2];
-  int alive_cnt;
-
-  /* if the caller requests for the address of core, allocate 
-   * the default buffers and give it
-   */
-  if ( nwar < 0 ) {
-    if ( nwar == -1 && ptr_result ) {
-      *ptr_result = sim_alloc_bufs( DEF_MAX_WARS, DEF_CORESIZE,
-				    DEF_PROCESSES, DEF_CYCLES );
-      return 0;
-    }
-    return -1;
-  }
-  if ( nwar > 2 ) return -1;
-
-  /* otherwise set up things for sim_mw() */
-  Cycles = cycles;
-  war_pos_tab[0] = w1_start;
-  war_pos_tab[1] = w2_start;
-
-  alive_cnt = sim_mw( nwar, war_pos_tab, death_tab );
-  if ( alive_cnt < 0 ) return -1;
-
-  if ( nwar == 1) return alive_cnt;
-
-  if ( alive_cnt == 2 ) return 2;
-  return death_tab[0] == 0 ? 1 : 0;
-}
-
+//
+//int
+//sim( int nwar,
+//     field_t w1_start,
+//     field_t w2_start,
+//     unsigned int cycles,
+//     void **ptr_result )
+//{
+//  field_t war_pos_tab[2];
+//  unsigned int death_tab[2];
+//  int alive_cnt;
+//
+//  /* if the caller requests for the address of core, allocate 
+//   * the default buffers and give it
+//   */
+//  if ( nwar < 0 ) {
+//    if ( nwar == -1 && ptr_result ) {
+//      *ptr_result = sim_alloc_bufs( DEF_MAX_WARS, DEF_CORESIZE,
+//				    DEF_PROCESSES, DEF_CYCLES );
+//      return 0;
+//    }
+//    return -1;
+//  }
+//  if ( nwar > 2 ) return -1;
+//
+//  /* otherwise set up things for sim_mw() */
+//  Cycles = cycles;
+//  war_pos_tab[0] = w1_start;
+//  war_pos_tab[1] = w2_start;
+//
+//  alive_cnt = sim_mw( nwar, war_pos_tab, death_tab );
+//  if ( alive_cnt < 0 ) return -1;
+//
+//  if ( nwar == 1) return alive_cnt;
+//
+//  if ( alive_cnt == 2 ) return 2;
+//  return death_tab[0] == 0 ? 1 : 0;
+//}
+//
 
 
 /*-------------------------------------------------------------------------
@@ -486,7 +486,7 @@ sim( int nwar,
 	do { *(w->tail) = (x); if (++(w->tail) == queue_end) w->tail = queue_start; } while(0)
 
 #define INCMOD(x) do { if ( ++(x) == coresize ) (x) = 0; } while (0)
-#define IPINCMOD(x) do { if ( ++(x) == CoreEnd ) (x) = core; } while (0)
+#define IPINCMOD(x) do { if ( ++(x) == CoreEnd ) (x) = coreptr; } while (0)
 #define DECMOD(x) do { if ((x)-- == 0) (x) = coresize1; } while (0)
 #define IPDECMOD(x) do { if ((x)==0) x=CoreEnd1; else --(x); } while (0)
 #define ADDMOD(z,x,y) do { (z) = (x)+(y); if ((z)>=coresize) (z) -= coresize; } while (0)
@@ -497,19 +497,19 @@ sim( int nwar,
 /* private macros to access p-space. */
 #define UNSAFE_PSPACE_SET(warid, paddr, val) do {\
     if (paddr) {\
-	PSpaces[(warid)]->mem[(paddr)] = (val);\
+	core->PSpaces[(warid)]->mem[(paddr)] = (val);\
     } else {\
-	PSpaces[(warid)]->lastresult = (val);\
+	core->PSpaces[(warid)]->lastresult = (val);\
     }\
 } while(0)
 
 #define UNSAFE_PSPACE_GET(warid, paddr) \
-	( (paddr) ? PSpaces[(warid)]->mem[(paddr)]\
-		  : PSpaces[(warid)]->lastresult )
+	( (paddr) ? core->PSpaces[(warid)]->mem[(paddr)]\
+		  : core->PSpaces[(warid)]->lastresult )
 
 
 int
-sim_proper(unsigned int  nwar, const field_t * const war_pos_tab, unsigned int *death_tab )
+sim_proper(core_t *core, const field_t * const war_pos_tab, unsigned int *death_tab )
 {
   /*
    * Core and Process queue memories.
@@ -565,17 +565,17 @@ sim_proper(unsigned int  nwar, const field_t * const war_pos_tab, unsigned int *
   /*
    * misc.
    */
-  insn_t* const core = Core_Mem;
-  insn_t** const queue_start = Queue_Mem;
-  insn_t** const queue_end = Queue_Mem + NWarriors*Processes+1;
+  insn_t* const coreptr = core->Core_Mem;
+  insn_t** const queue_start = core->Queue_Mem;
+  insn_t** const queue_end = core->Queue_Mem + core->NWarriors*core->Processes+1;
   w_t* w;			/* current warrior */
-  const unsigned int coresize = Coresize;
+  const unsigned int coresize = core->Coresize;
   const unsigned int coresize1 = coresize-1; /* size of core, size of core - 1 */
-  insn_t* const CoreEnd = core + coresize; // point after last instruction
+  insn_t* const CoreEnd = coreptr + coresize; // point after last instruction
   insn_t* const CoreEnd1 = CoreEnd - 1; // point to last instruction
-  int cycles = nwar * Cycles; /* set instruction executions until tie counter */
-  int alive_cnt = nwar;
-  int max_alive_proc = nwar * Processes; 
+  int cycles = core->NWarriors * core->Cycles; /* set instruction executions until tie counter */
+  int alive_cnt = core->NWarriors;
+  int max_alive_proc = core->NWarriors * core->Processes;
   insn_t **pofs = queue_end-1;
 
 #if DEBUG >= 1
@@ -584,29 +584,29 @@ sim_proper(unsigned int  nwar, const field_t * const war_pos_tab, unsigned int *
 #endif
 
 
-	War_Tab[0].succ = &War_Tab[nwar-1];
-	War_Tab[nwar-1].pred = &War_Tab[0];
+	core->War_Tab[0].succ = &core->War_Tab[core->NWarriors-1];
+	core->War_Tab[core->NWarriors-1].pred = &core->War_Tab[0];
 	{
 	u32_t ftmp = 0;		/* temps */
 		
 	do {
-		int t = nwar-1-ftmp;
-		if ( t > 0 ) War_Tab[t].succ = &(War_Tab[t-1]);
-		if ( t < nwar-1 ) War_Tab[t].pred = &(War_Tab[t+1]);
-		pofs -= Processes;
-		*pofs = &(core[war_pos_tab[ftmp]]);
-		War_Tab[t].head = pofs;
-		War_Tab[t].tail = pofs+1;
-		War_Tab[t].nprocs = 1;
-		War_Tab[t].id = ftmp;
+		int t = core->NWarriors-1-ftmp;
+		if ( t > 0 ) core->War_Tab[t].succ = &(core->War_Tab[t-1]);
+		if ( t < core->NWarriors-1 ) core->War_Tab[t].pred = &(core->War_Tab[t+1]);
+		pofs -= core->Processes;
+		*pofs = &(coreptr[war_pos_tab[ftmp]]);
+		core->War_Tab[t].head = pofs;
+		core->War_Tab[t].tail = pofs+1;
+		core->War_Tab[t].nprocs = 1;
+		core->War_Tab[t].id = ftmp;
 		ftmp++;
-	} while ( ftmp < nwar );
+	} while ( ftmp < core->NWarriors );
 	}
 	
 	/*******************************************************************
 	 * Main loop - optimize here
 	 */
-	w = &War_Tab[ nwar-1 ];
+	w = &core->War_Tab[ core->NWarriors-1 ];
 	do {
 		/* 'in' field of current insn for decoding */
 		u32_t in;
@@ -766,7 +766,7 @@ sim_proper(unsigned int  nwar, const field_t * const war_pos_tab, unsigned int *
 			spl:
 				IPINCMOD(ip);
 				queue(ip);
-				if ( w->nprocs < Processes ) {
+				if ( w->nprocs < core->Processes ) {
 					++w->nprocs;
 					queue(pta);
 				}
@@ -789,7 +789,7 @@ sim_proper(unsigned int  nwar, const field_t * const war_pos_tab, unsigned int *
 				w->succ->pred = w->pred;
 				*death_tab++ = w->id;
 				cycles = cycles - cycles/alive_cnt; /* nC+k -> (n-1)C+k */
-				max_alive_proc = alive_cnt * Processes;
+				max_alive_proc = alive_cnt * core->Processes;
 				if ( --alive_cnt <= 1 ) 
 					goto out;
 			}
@@ -1184,35 +1184,35 @@ sim_proper(unsigned int  nwar, const field_t * const war_pos_tab, unsigned int *
       break;
 
     case _OP(LDP,mA):
-      ptb->a = UNSAFE_PSPACE_GET(w->id, ra_a % PSpace_size);
+      ptb->a = UNSAFE_PSPACE_GET(w->id, ra_a % core->PSpace_size);
       break;
     case _OP(LDP,mAB):
-      ptb->b = UNSAFE_PSPACE_GET(w->id, ra_a % PSpace_size);
+      ptb->b = UNSAFE_PSPACE_GET(w->id, ra_a % core->PSpace_size);
       break;
     case _OP(LDP,mBA):
-      ptb->a = UNSAFE_PSPACE_GET(w->id, ra_b % PSpace_size);
+      ptb->a = UNSAFE_PSPACE_GET(w->id, ra_b % core->PSpace_size);
       break;
     case _OP(LDP,mF):
     case _OP(LDP,mX):
     case _OP(LDP,mI):
     case _OP(LDP,mB):
-      ptb->b = UNSAFE_PSPACE_GET(w->id, ra_b % PSpace_size);
+      ptb->b = UNSAFE_PSPACE_GET(w->id, ra_b % core->PSpace_size);
       break;
 
     case _OP(STP,mA):
-      UNSAFE_PSPACE_SET(w->id, rb_a % PSpace_size, ra_a);
+      UNSAFE_PSPACE_SET(w->id, rb_a % core->PSpace_size, ra_a);
       break;
     case _OP(STP,mAB):
-      UNSAFE_PSPACE_SET(w->id, rb_b % PSpace_size, ra_a);
+      UNSAFE_PSPACE_SET(w->id, rb_b % core->PSpace_size, ra_a);
       break;
     case _OP(STP,mBA):
-      UNSAFE_PSPACE_SET(w->id, rb_a % PSpace_size, ra_b);
+      UNSAFE_PSPACE_SET(w->id, rb_a % core->PSpace_size, ra_b);
       break;
     case _OP(STP,mF):
     case _OP(STP,mX):
     case _OP(STP,mI):
     case _OP(STP,mB):
-      UNSAFE_PSPACE_SET(w->id, rb_b % PSpace_size, ra_b);
+      UNSAFE_PSPACE_SET(w->id, rb_b % core->PSpace_size, ra_b);
       break;
 
 #if DEBUG > 0
