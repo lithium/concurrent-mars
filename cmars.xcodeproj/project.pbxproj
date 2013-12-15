@@ -7,8 +7,11 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		129D27ED185D6384007E75F9 /* main.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 129D27EC185D6384007E75F9 /* main.cpp */; };
 		129D27EF185D6384007E75F9 /* cmars.1 in CopyFiles */ = {isa = PBXBuildFile; fileRef = 129D27EE185D6384007E75F9 /* cmars.1 */; };
+		129D280D185D6496007E75F9 /* asm.c in Sources */ = {isa = PBXBuildFile; fileRef = 129D2804185D6430007E75F9 /* asm.c */; };
+		129D280E185D6496007E75F9 /* exhaust.c in Sources */ = {isa = PBXBuildFile; fileRef = 129D2806185D6430007E75F9 /* exhaust.c */; };
+		129D280F185D6496007E75F9 /* pspace.c in Sources */ = {isa = PBXBuildFile; fileRef = 129D2809185D6430007E75F9 /* pspace.c */; };
+		129D2810185D6496007E75F9 /* sim.c in Sources */ = {isa = PBXBuildFile; fileRef = 129D280B185D6430007E75F9 /* sim.c */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -28,6 +31,15 @@
 		129D27E9185D6384007E75F9 /* cmars */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = cmars; sourceTree = BUILT_PRODUCTS_DIR; };
 		129D27EC185D6384007E75F9 /* main.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = main.cpp; sourceTree = "<group>"; };
 		129D27EE185D6384007E75F9 /* cmars.1 */ = {isa = PBXFileReference; lastKnownFileType = text.man; path = cmars.1; sourceTree = "<group>"; };
+		129D2804185D6430007E75F9 /* asm.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = asm.c; sourceTree = "<group>"; };
+		129D2805185D6430007E75F9 /* asm.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = asm.h; sourceTree = "<group>"; };
+		129D2806185D6430007E75F9 /* exhaust.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = exhaust.c; sourceTree = "<group>"; };
+		129D2807185D6430007E75F9 /* exhaust.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = exhaust.h; sourceTree = "<group>"; };
+		129D2808185D6430007E75F9 /* insn.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = insn.h; sourceTree = "<group>"; };
+		129D2809185D6430007E75F9 /* pspace.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = pspace.c; sourceTree = "<group>"; };
+		129D280A185D6430007E75F9 /* pspace.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = pspace.h; sourceTree = "<group>"; };
+		129D280B185D6430007E75F9 /* sim.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = sim.c; sourceTree = "<group>"; };
+		129D280C185D6430007E75F9 /* sim.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = sim.h; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -60,10 +72,27 @@
 		129D27EB185D6384007E75F9 /* cmars */ = {
 			isa = PBXGroup;
 			children = (
+				129D2803185D6430007E75F9 /* exhaust-ma */,
 				129D27EC185D6384007E75F9 /* main.cpp */,
 				129D27EE185D6384007E75F9 /* cmars.1 */,
 			);
 			path = cmars;
+			sourceTree = "<group>";
+		};
+		129D2803185D6430007E75F9 /* exhaust-ma */ = {
+			isa = PBXGroup;
+			children = (
+				129D2804185D6430007E75F9 /* asm.c */,
+				129D2806185D6430007E75F9 /* exhaust.c */,
+				129D2809185D6430007E75F9 /* pspace.c */,
+				129D280B185D6430007E75F9 /* sim.c */,
+				129D2805185D6430007E75F9 /* asm.h */,
+				129D2807185D6430007E75F9 /* exhaust.h */,
+				129D2808185D6430007E75F9 /* insn.h */,
+				129D280A185D6430007E75F9 /* pspace.h */,
+				129D280C185D6430007E75F9 /* sim.h */,
+			);
+			path = "exhaust-ma";
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -117,7 +146,10 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				129D27ED185D6384007E75F9 /* main.cpp in Sources */,
+				129D280D185D6496007E75F9 /* asm.c in Sources */,
+				129D280E185D6496007E75F9 /* exhaust.c in Sources */,
+				129D280F185D6496007E75F9 /* pspace.c in Sources */,
+				129D2810185D6496007E75F9 /* sim.c in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -225,6 +257,7 @@
 				129D27F4185D6384007E75F9 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
 	};
