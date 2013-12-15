@@ -26,6 +26,8 @@
 #include <time.h>
 #include <ctype.h>
 
+#include <pthread.h>
+
 #include "exhaust.h"		/* types */
 #include "asm.h"		/* assembler proto */
 #include "sim.h"		/* simulator proto */
@@ -61,9 +63,15 @@ typedef struct threadctx {
 
      core_t Core;
 
+        pthread_t pthread;
+    unsigned int NumRounds;
+    unsigned int ThreadNumber;
+
 } threadctx_t;
 
-static threadctx_t ThreadContext;
+static threadctx_t *Contexts;
+static pthread_mutex_t ContextMutex;
+static pthread_cond_t ContextCondition;
 
 /* Globals to communicate options from readargs() to main() */
 int	OPT_cycles = 80000;	/* cycles until tie */
@@ -75,6 +83,7 @@ int	OPT_F = 0;		/* initial position of warrior 2 */
 int	OPT_k = 0;		/* nothing (`koth' format flag) */
 int	OPT_b = 0;		/* nothing (we are always `brief') */
 int	OPT_m = 0;		/* multi-warrior output format. */
+int OPT_threads = 1;      /* multi-threading */
 
 char *prog_name;
 char errmsg[256];
@@ -123,7 +132,7 @@ usage()
     printf("%s v%d.%d\n", prog_name, VERSION, REVISION );
     printf("usage: %s [opts] warriors...\n", prog_name );
     printf("opts: -r <rounds>, -c <cycles>, -F <pos>, -s <coresize>,\n"
-	   "      -p <maxprocs>, -d <minsep>, -bk\n");
+	   "      -p <maxprocs>, -d <minsep>, -j <threadcount> -bk\n");
     exit(1);
 }
 
@@ -474,6 +483,15 @@ readargs(int argc, char** argv )
 	    if ( OPT_cycles <= 0 )
 	      panic( "cycles must be > 0\n" );
 	    break;
+      case 'j':
+          if ( n == argc-1 || !isdigit(argv[n+1][0]) )
+              panic( "bad argument for option -j\n");
+          c = 0;
+          OPT_threads = atoi( argv[++n] );
+          if ( OPT_threads <= 0 )
+              panic( "threads must be > 0\n" );
+          break;
+
 	  default:
 	    sprintf(errmsg,"unknown option '%c'\n", c);
 	    panic(errmsg);
@@ -494,6 +512,49 @@ readargs(int argc, char** argv )
 }
 
 
+/*-------------------------------------------------------------------------
+ * Thread Main
+ */
+void *thread_main(void *arg)
+{
+    threadctx_t *threadctx = (threadctx_t*)arg;
+    unsigned int n;		/* round counter */
+    s32_t seed;			/* rnd seed. */
+    
+    clear_results(threadctx);
+    seed = OPT_F ? OPT_F-OPT_minsep : rng(time(0)*0x1d872b41);
+    
+    
+    /*
+     * Allocate simulator buffers and initialise p-spaces.
+     */
+    if ( sim_create( &(threadctx->Core), NWarriors, OPT_coresize, OPT_processes, OPT_cycles) != 0 )
+        panic("can't allocate memory.\n");
+    
+    save_pspaces(threadctx);
+    amalgamate_pspaces(threadctx);	/* Share P-spaces with equal PINs */
+    
+    /*
+     * Fight NumRounds rounds.
+     */
+    for ( n = 0; n < threadctx->NumRounds; n++ ) {
+        int nalive;
+        sim_clear_core(&(threadctx->Core));
+        
+        seed = compute_positions(threadctx, seed);
+        load_warriors(threadctx);
+        set_starting_order(threadctx, n);
+        
+        nalive = sim_mw( &(threadctx->Core), threadctx->StartPositions, threadctx->Deaths );
+        if (nalive<0)
+            panic("simulator panic!\n");
+        
+        accumulate_results(threadctx);
+    }
+    output_results(threadctx);
+
+    return NULL;
+}
 
 /*-------------------------------------------------------------------------
  * Main
@@ -502,51 +563,41 @@ readargs(int argc, char** argv )
 int
 main( int argc, char **argv )
 {
-    unsigned int n;		/* round counter */
-    s32_t seed;			/* rnd seed. */
 
     prog_name = xbasename(argv[0]);
     readargs(argc, argv);
     
-    
-    memset(&ThreadContext, 0, sizeof(threadctx_t));
-
     import_warriors();
     check_sanity();
-    clear_results(&ThreadContext);
-
-    seed = OPT_F ? OPT_F-OPT_minsep : rng(time(0)*0x1d872b41);
-
-    /*
-     * Allocate simulator buffers and initialise p-spaces.
-     */
-    if ( sim_create( &(ThreadContext.Core), NWarriors, OPT_coresize, OPT_processes, OPT_cycles) != 0 )
-        panic("can't allocate memory.\n");
-
-    save_pspaces(&ThreadContext);
-    amalgamate_pspaces(&ThreadContext);	/* Share P-spaces with equal PINs */
-
-    /*
-     * Fight OPT_rounds rounds.
-     */
-    for ( n = 0; n < OPT_rounds; n++ ) {
-	int nalive;
-	sim_clear_core(&(ThreadContext.Core));
-
-	seed = compute_positions(&ThreadContext, seed);
-	load_warriors(&ThreadContext);
-	set_starting_order(&ThreadContext, n);
-
-	nalive = sim_mw( &ThreadContext.Core, &ThreadContext.StartPositions[0], &ThreadContext.Deaths[0] );
-	if (nalive<0)
-	    panic("simulator panic!\n");	
-
-	accumulate_results(&ThreadContext);
-    }
-    sim_free_bufs(&ThreadContext.Core);
-    /*print_counts();*/
+    
+    Contexts = malloc(OPT_threads * sizeof(threadctx_t));
+    memset(Contexts, 0, OPT_threads*sizeof(threadctx_t));
     
 
-    output_results(&ThreadContext);
+    int roundsPerThread = OPT_rounds/OPT_threads;
+    int j;
+    for (j=0; j < OPT_threads; j++) {
+        threadctx_t *threadctx = &Contexts[j];
+        threadctx->NumRounds = roundsPerThread;
+        threadctx->ThreadNumber = j;
+        int retval;
+        if ((retval = pthread_create(&(threadctx->pthread), NULL, thread_main, threadctx)) != 0) {
+            panic("Failed to create thread!\n");
+            exit(retval);
+        }
+    }
+    for (j=0; j < OPT_threads; j++) {
+        threadctx_t *threadctx = &Contexts[j];
+        pthread_join(threadctx->pthread, NULL);
+    }
+
+    printf("finished waiting\n");
+
+
+
+//    sim_free_bufs(&ThreadContext.Core);
+    /*print_counts();*/
+    
+//    output_results(&ThreadContext);
     return 0;
 }
