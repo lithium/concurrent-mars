@@ -39,15 +39,6 @@
  * File scoped stuff
  */
 
-/* internal warrior structure */
-typedef struct w_st {
-  insn_t **tail;		/* next free location to queue a process */
-  insn_t **head;		/* next process to run from queue */
-  struct w_st *succ;		/* next warrior alive */
-  u32_t nprocs;			/* number of live processes in this warrior */
-  struct w_st *pred;		/* previous warrior alive */
-  int id;			/* index (or identity) of warrior */
-} w_t;
 
 #define DEF_MAX_WARS 2
 #define DEF_CORESIZE 8000
@@ -56,32 +47,21 @@ typedef struct w_st {
 
 /*static unsigned int modes[8] = {0, 0, 0, 0, 0, 0, 0, 0};*/
 
-static unsigned int Coresize  = 0;
-static unsigned int Processes = 0;
-static unsigned int NWarriors = 0;
-static unsigned int Cycles    = 0;
 
-static w_t          *War_Tab = NULL;
-static insn_t       *Core_Mem = NULL;
-static insn_t       **Queue_Mem = NULL;
-
-/* P-space */
-static unsigned int PSpace_size = 0;    /* # p-space slots per warrior. */
-static pspace_t	    **PSpaces;	        /* p-spaces of each warrior. */
 
 /* protos */
 static int sim_proper( unsigned int, const field_t *, unsigned int * );
 static void alloc_pspaces( unsigned int nwars, unsigned int pspacesize );
-static void free_pspaces( unsigned int nwars );
+static void free_pspaces( core_t *core );
 
 /*---------------------------------------------------------------
  * Simulator memory management
  */
 
 void
-sim_clear_core()
+sim_clear_core(core_t *core)
 {
-  memset(Core_Mem, 0, Coresize*sizeof(insn_t));
+  memset(core->Core_Mem, 0,core-> Coresize*sizeof(insn_t));
 }
 
 /* NAME
@@ -122,46 +102,48 @@ sim_clear_core()
  */
 
 void
-sim_free_bufs()
+sim_free_bufs(core_t *core)
 {
-  free_pspaces(NWarriors);
-  if ( Core_Mem ) free( Core_Mem ); Core_Mem = NULL; Coresize = 0;
-  if ( Queue_Mem ) free( Queue_Mem ); Queue_Mem = NULL; Processes = 0;
-  if ( War_Tab ) free( War_Tab ); War_Tab = NULL; NWarriors = 0;
+  free_pspaces(core);
+  if ( core->Core_Mem )
+      free( core->Core_Mem );
+  core->Core_Mem = NULL;
+  core->Coresize = 0;
+  if ( core->Queue_Mem )
+      free( core->Queue_Mem );
+  core->Queue_Mem = NULL;
+  core->Processes = 0;
+  if ( core->War_Tab )
+      free( core->War_Tab );
+  core->War_Tab = NULL;
+  core->NWarriors = 0;
 }
 
 
-insn_t *
-sim_alloc_bufs2(unsigned int nwars, unsigned int coresize, unsigned int processes, unsigned int cycles, unsigned int pspace )
+int
+sim_create(core_t *core, unsigned int nwars, unsigned int coresize, unsigned int processes, unsigned int cycles)
 {
+    
+    unsigned int pspace;
+    pspace = coresize/16 == 0 ? 1 : coresize/16;
+
   unsigned int queue_size;
 
-  sim_free_bufs();
+  memset(core, 0, sizeof(core_t));
+  sim_free_bufs(core);
 
-  Core_Mem = (insn_t*)malloc(sizeof(insn_t) * coresize);
+  core->Core_Mem = (insn_t*)malloc(sizeof(insn_t) * coresize);
   queue_size = nwars*processes+1;
-  Queue_Mem = (insn_t**)malloc( sizeof(insn_t*)*queue_size );
-  War_Tab = (w_t*)malloc( sizeof(w_t)*nwars );
+  core->Queue_Mem = (insn_t**)malloc( sizeof(insn_t*)*queue_size );
+  core->War_Tab = (w_t*)malloc( sizeof(w_t)*nwars );
   alloc_pspaces(nwars, pspace);
 
-  if ( Core_Mem && Queue_Mem && War_Tab && PSpaces ) {
-    Cycles = cycles;
-    NWarriors = nwars;
-    Coresize = coresize;
-    Processes = processes;
-    sim_clear_pspaces();
-    return Core_Mem;
-  }
-  sim_free_bufs();
-  return NULL;
-}
-
-insn_t *
-sim_alloc_bufs(unsigned int nwars, unsigned int coresize, unsigned int processes, unsigned int cycles)
-{
-  unsigned int pspace;
-  pspace = coresize/16 == 0 ? 1 : coresize/16;
-  return sim_alloc_bufs2( nwars, coresize, processes, cycles, pspace );
+  core->Cycles = cycles;
+  core->NWarriors = nwars;
+  core->Coresize = coresize;
+  core->Processes = processes;
+  sim_clear_pspaces(core);
+  return 0;
 }
 
 
@@ -227,19 +209,19 @@ sim_load_warrior(unsigned int pos, const insn_t * const code, unsigned int len)
  */
 
 static void
-free_pspaces(unsigned int nwars)
+free_pspaces(core_t *core)
 {
   unsigned int i;
-  if ( nwars>0 ) {
+  if ( core->NWarriors>0 ) {
     if (PSpaces) {
-      for (i=0; i<nwars; i++) {
+      for (i=0; i<core->NWarriors; i++) {
 	pspace_free(PSpaces[i]);
       }
       free(PSpaces);
     }
   }
-  PSpace_size = 0;
-  PSpaces = NULL;
+  core->PSpace_size = 0;
+  core->PSpaces = NULL;
 }
 
 
