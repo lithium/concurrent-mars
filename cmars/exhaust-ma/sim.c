@@ -128,13 +128,13 @@ sim_create(core_t *core, unsigned int nwars, unsigned int coresize, unsigned int
     pspace = coresize/16 == 0 ? 1 : coresize/16;
 
     unsigned int queue_size;
+
+    memset(core, 0, sizeof(core_t));
+    sim_free_bufs(core);
     core->Cycles = cycles;
     core->NWarriors = nwars;
     core->Coresize = coresize;
     core->Processes = processes;
-
-  memset(core, 0, sizeof(core_t));
-  sim_free_bufs(core);
 
   core->Core_Mem = (insn_t*)malloc(sizeof(insn_t) * coresize);
   queue_size = nwars*processes+1;
@@ -1229,7 +1229,7 @@ sim_proper(core_t *core, const field_t * const war_pos_tab, unsigned int *death_
   } while(--cycles > 0);
 
  out:
-#if DEBUG == 1
+#if DEBUG == 2
   printf("cycles: %d\n", cycles);
 #endif
   

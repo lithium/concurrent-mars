@@ -57,6 +57,7 @@ static u32_t		Results[MAX_WARRIORS][MAX_WARRIORS+1];
 static pspace_t *	PSpaces[MAX_WARRIORS];
 				/* p-spaces of warriors. */
 
+static core_t Core;
 
 /* Globals to communicate options from readargs() to main() */
 int	OPT_cycles = 80000;	/* cycles until tie */
@@ -287,7 +288,7 @@ void
 save_pspaces()
 {
     pspace_t **ps;
-    ps = sim_get_pspaces();
+    ps = sim_get_pspaces(&Core);
     memcpy( PSpaces, ps, sizeof(pspace_t *)*NWarriors );
 }
 
@@ -315,7 +316,7 @@ load_warriors()
 {
     unsigned int i;
     for (i=0; i<NWarriors; i++) {
-	sim_load_warrior(Positions[i], &Warriors[i].code[0], Warriors[i].len);
+	sim_load_warrior(&Core, Positions[i], &Warriors[i].code[0], Warriors[i].len);
     }
 }
 
@@ -335,7 +336,7 @@ set_starting_order(unsigned int round)
 
     /* Copy p-spaces into simulator p-space array with a
        cyclic shift of rounds places. */
-    ps = sim_get_pspaces();
+    ps = sim_get_pspaces(&Core);
     for (i=0; i<NWarriors; i++) {
 	ps[i] = PSpaces[(i + round) % NWarriors];
     }
@@ -510,8 +511,8 @@ main( int argc, char **argv )
     /*
      * Allocate simulator buffers and initialise p-spaces.
      */
-    if (! sim_alloc_bufs( NWarriors, OPT_coresize, OPT_processes, OPT_cycles))
-	panic("can't allocate memory.\n");
+    if ( sim_create( &Core, NWarriors, OPT_coresize, OPT_processes, OPT_cycles) != 0 )
+        panic("can't allocate memory.\n");
 
     save_pspaces();
     amalgamate_pspaces();	/* Share P-spaces with equal PINs */
@@ -521,19 +522,19 @@ main( int argc, char **argv )
      */
     for ( n = 0; n < OPT_rounds; n++ ) {
 	int nalive;
-	sim_clear_core();
+	sim_clear_core(&Core);
 
 	seed = compute_positions(seed);
 	load_warriors();
 	set_starting_order(n);
 
-	nalive = sim_mw( NWarriors, &StartPositions[0], &Deaths[0] );
+	nalive = sim_mw( &Core, &StartPositions[0], &Deaths[0] );
 	if (nalive<0)
 	    panic("simulator panic!\n");	
 
 	accumulate_results();
     }
-    sim_free_bufs();
+    sim_free_bufs(&Core);
     /*print_counts();*/
     
 
